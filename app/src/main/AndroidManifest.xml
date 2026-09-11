@@ -26,6 +26,12 @@
             </intent-filter>
         </receiver>
 
+        <service
+            android:name=".BackgroundAudioService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
 
         <activity
             android:name=".MainActivity"
