@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Seal YouTube</string>
+
+    <!--
+      Get a key from https://console.cloud.google.com/apis/credentials
+      after enabling "YouTube Data API v3" on a project.
+      Restrict it to that API + your app's package/signing cert.
+    -->
+    <string name="youtube_api_key">AIzaSyD7qNuD8noMUG6rdfD0fFh6zkkteYxVDps</string>
+</resources>
