@@ -3,14 +3,16 @@ package com.example.sealyoutube
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
+import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebChromeClient
@@ -20,6 +22,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -33,9 +36,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import androidx.media.MediaBrowserServiceCompat
 import com.example.sealyoutube.ui.theme.SealYouTubeTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            startBackgroundService()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,13 +58,7 @@ class MainActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_SECURE,
         )
 
-        // Start Foreground Service for background audio playback capability
-        val serviceIntent = Intent(this, BackgroundAudioService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        checkAndRequestPermissions()
 
         setContent {
             SealYouTubeTheme {
@@ -69,6 +76,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkAndRequestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                startBackgroundService()
+            }
+        } else {
+            startBackgroundService()
+        }
+    }
+
+    private fun startBackgroundService() {
+        val serviceIntent = Intent(this, BackgroundAudioService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         // Stop service when activity is completely destroyed to avoid draining battery
@@ -76,18 +108,33 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-class BackgroundAudioService : Service() {
-    override fun onBind(intent: Intent?): IBinder? = null
+class BackgroundAudioService : MediaBrowserServiceCompat() {
+    private var mediaSession: MediaSessionCompat? = null
 
     override fun onCreate() {
         super.onCreate()
+        
+        mediaSession = MediaSessionCompat(this, "BackgroundAudioService").apply {
+            setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
+            isActive = true
+            
+            val state = PlaybackStateCompat.Builder()
+                .setActions(PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or PlaybackStateCompat.ACTION_STOP)
+                .setState(PlaybackStateCompat.STATE_PLAYING, 0, 1.0f)
+                .build()
+            setPlaybackState(state)
+        }
+        sessionToken = mediaSession?.sessionToken
+
         createNotificationChannel()
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Seal YouTube")
+            .setContentTitle("YouTube")
             .setContentText("Background playback active")
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_logo)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
+            .setStyle(androidx.media.app.NotificationCompat.MediaStyle()
+                .setMediaSession(mediaSession?.sessionToken))
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -99,6 +146,19 @@ class BackgroundAudioService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY
+    }
+
+    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
+        return BrowserRoot("root", null)
+    }
+
+    override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
+        result.sendResult(mutableListOf())
+    }
+
+    override fun onDestroy() {
+        mediaSession?.release()
+        super.onDestroy()
     }
 
     private fun createNotificationChannel() {
