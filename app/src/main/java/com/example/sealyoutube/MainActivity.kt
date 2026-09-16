@@ -180,18 +180,25 @@ class BackgroundAudioService : MediaBrowserServiceCompat() {
         mediaSession?.setMetadata(metadata)
 
         val notification = buildNotification(title, isPlaying)
-        if (isPlaying) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
+        
+        // Fix for ForegroundServiceDidNotStartInTimeException:
+        // Always call startForeground to satisfy the requirement of startForegroundService().
+        // We do this regardless of playback state to ensure the service is properly promoted.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+
+        if (!isPlaying) {
+            // If not playing, we can remove the foreground requirement so the notification can be swiped away,
+            // but we must have called startForeground first.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_DETACH)
             } else {
                 stopForeground(false)
             }
+            // Update the notification to ensure it shows the paused state and is not ongoing.
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.notify(NOTIFICATION_ID, notification)
         }
@@ -334,6 +341,8 @@ fun YouTubeScreen(onBackPressed: () -> Unit) {
                                     
                                     if (!window.hasMediaPoller) {
                                         window.hasMediaPoller = true;
+                                        window.lastTitle = '';
+                                        window.lastIsPlaying = null;
                                         setInterval(function() {
                                             var video = document.querySelector('video');
                                             var title = document.title;
@@ -341,8 +350,13 @@ fun YouTubeScreen(onBackPressed: () -> Unit) {
                                                 title = title.substring(0, title.length - 10);
                                             }
                                             var isPlaying = video ? !video.paused && !video.ended : false;
-                                            if (window.AndroidMedia) {
-                                                window.AndroidMedia.updateMediaInfo(title || 'YouTube', isPlaying);
+                                            
+                                            if (title !== window.lastTitle || isPlaying !== window.lastIsPlaying) {
+                                                window.lastTitle = title;
+                                                window.lastIsPlaying = isPlaying;
+                                                if (window.AndroidMedia) {
+                                                    window.AndroidMedia.updateMediaInfo(title || 'YouTube', isPlaying);
+                                                }
                                             }
                                         }, 1000);
                                     }

@@ -1,6 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.composeCompiler)
 }
 
 android {
@@ -15,8 +15,18 @@ android {
         versionName = "0.1"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("youtube.jks")
+            storePassword = project.findProperty("RELEASE_STORE_PASSWORD")?.toString()
+            keyAlias = project.findProperty("RELEASE_KEY_ALIAS")?.toString()
+            keyPassword = project.findProperty("RELEASE_KEY_PASSWORD")?.toString()
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -30,9 +40,23 @@ android {
         compose = true
     }
 
+    packaging {
+        resources {
+            excludes += "/baseline-prof.txt"
+            excludes += "/*.dm"
+            excludes += "**/baseline-prof.txt"
+            excludes += "**/*.dm"
+            excludes += "assets/dexopt/baseline.prof"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    configurations.all {
+        exclude(group = "androidx.profileinstaller", module = "profileinstaller")
     }
 }
 
